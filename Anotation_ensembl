@@ -1,0 +1,135 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(biomaRt)
+library(readr)
+library(dplyr)
+```
+
+```{r}
+biomaRt::listMarts()
+```
+
+```{r}
+#ensembl <- useEnsembl(biomart = "ENSEMBL_MART_SNP", mirror = "useast")
+
+ensembl <- useEnsembl(biomart = "ENSEMBL_MART_SNP")
+
+#ensembl <- useEnsembl(biomart = "ENSEMBL_MART_ENSEMBL")
+
+```
+
+
+```{}
+datasets <- biomaRt::listDatasets(ensembl)
+#hsapiens_snp
+datasets
+#library(stringr)
+datasets[stringr::str_detect(string = "	
+hsapiens_snp",pattern = as.character(datasets$dataset) ),]
+```
+
+```{r}
+ensembl <- biomaRt::useDataset(dataset = "hsapiens_snp", mart = ensembl)
+#str(ensembl)
+```
+
+
+```{r}
+atributos <- biomaRt::listAttributes(ensembl)
+#head(atributos)
+```
+
+```{r}
+filtros<- biomaRt::listFilters(ensembl)
+```
+
+
+```{r}
+lista<-biomaRt::listAttributes(mart = ensembl, page = "snp")
+```
+
+
+```{r}
+BCAC_triple_neg <- read.table("BCAC_triple_neg_filtered.txt", header = TRUE, stringsAsFactors = FALSE)
+BCAC_luminalB<- read.table("BCAC_luminalB_filtered.txt", header = TRUE, stringsAsFactors = FALSE)
+BCAC_luminalA<- read.table("BCAC_luminalA_filtered.txt", header = TRUE, stringsAsFactors = FALSE)
+BCAC_HER2_pos<- read.table("BCAC_HER2_pos_filtered.txt", header = TRUE, stringsAsFactors = FALSE)
+BCAC_HER2_neg<- read.table("BCAC_HER2_neg_filtered.txt", header = TRUE, stringsAsFactors = FALSE)
+```
+
+
+```{r}
+BCAC_FILTERED <- rbind(BCAC_triple_neg, 
+                    BCAC_luminalB, 
+                    BCAC_luminalA, 
+                    BCAC_HER2_pos, 
+                    BCAC_HER2_neg)
+```
+
+
+```{r}
+
+BCAC_FILTERED <- BCAC_FILTERED[order(BCAC_FILTERED$chr_name), ]
+```
+
+
+
+```{r}
+obtener_info_variantes <- function(archivo_txt) {
+  datos <- read.table(archivo_txt, header = TRUE, stringsAsFactors = FALSE)
+  rsIDs <- datos$rsID
+  variantes_info <- getBM(attributes = c("refsnp_id","associated_gene","chr_name","consequence_type_tv","consequence_allele_string","reg_consequence_types","motif_consequence_types"),
+                          filters = "snp_filter", 
+                          values = rsIDs, 
+                          mart = ensembl)
+  
+  return(variantes_info)
+}
+
+BCAC_triple_neg_filtered <- obtener_info_variantes("BCAC_triple_neg_filtered.txt")
+BCAC_luminalB_filtered<- obtener_info_variantes("BCAC_luminalB_filtered.txt")
+BCAC_luminalA_filtered<- obtener_info_variantes("BCAC_luminalA_filtered.txt")
+BCAC_HER2_pos_filtered<- obtener_info_variantes("BCAC_HER2_pos_filtered.txt")
+BCAC_HER2_neg_filtered<- obtener_info_variantes("BCAC_HER2_neg_filtered.txt")
+```
+
+
+# JUNTAR TODOS
+
+
+```{r}
+# Fusionar las tablas basadas en la columna común "refsnp_id" y "rsID"
+BCAC_triple_neg_final <- merge(BCAC_triple_neg,BCAC_triple_neg_filtered, by.x = "rsID", by.y = "refsnp_id", all.x = TRUE)
+BCAC_luminalB_final <- merge(BCAC_luminalB,BCAC_luminalB_filtered, by.x = "rsID", by.y = "refsnp_id", all.x = TRUE)
+BCAC_luminalA_final <- merge(BCAC_luminalA,BCAC_luminalA_filtered, by.x = "rsID", by.y = "refsnp_id", all.x = TRUE)
+BCAC_HER2_pos_final <- merge(BCAC_HER2_pos,BCAC_HER2_pos_filtered, by.x = "rsID", by.y = "refsnp_id", all.x = TRUE)
+BCAC_HER2_neg_final <- merge(BCAC_HER2_neg,BCAC_HER2_neg_filtered, by.x = "rsID", by.y = "refsnp_id", all.x = TRUE)
+```
+
+
+
+```{r}
+BCAC_juntos <- rbind(BCAC_triple_neg_final, 
+                    BCAC_luminalB_final, 
+                    BCAC_luminalA_final, 
+                    BCAC_HER2_pos_final, 
+                    BCAC_HER2_neg_final)
+```
+
+
+
+```{r}
+BCAC_juntos <- BCAC_juntos[order(BCAC_juntos$chr_name.x), ]
+```
+
+
+```{R}
+library(openxlsx)
+
+write.xlsx(BCAC_juntos, file = "BCAC_juntos.xlsx")
+```
+
