@@ -1,0 +1,330 @@
+
+```{r}
+library(readr)
+library(dplyr)
+library(survival)
+library(survminer)
+```
+
+```{r}
+# Cargar los datos de expresión del gen FRY
+gen_FRY <- read.table("gen_FRY.tsv", header = TRUE, sep = "\t")
+
+# Cargar los datos clínicos
+TCGA_CLINICAL_ALL_cell_dictionary <- read_delim("TCGA.CLINICAL.ALL.cell.dictionary.csv", delim = ";", escape_double = FALSE, trim_ws = TRUE)
+```
+
+```{r}
+# Convertir las columnas clínicas relevantes a numéricas
+TCGA_CLINICAL_ALL_cell_dictionary <- TCGA_CLINICAL_ALL_cell_dictionary %>%
+  mutate(age_at_initial_pathologic_diagnosis = as.numeric(age_at_initial_pathologic_diagnosis),
+         OS = as.numeric(OS),
+         OS.time = as.numeric(OS.time),
+         PFI = as.numeric(PFI),
+         PFI.time = as.numeric(PFI.time))
+
+# Filtrar los datos clínicos para solo incluir cáncer de mama
+clinical_breast_cancer <- TCGA_CLINICAL_ALL_cell_dictionary %>%
+  filter(type == "BRCA")
+
+clinical_breast_cancer <- TCGA_CLINICAL_ALL_cell_dictionary %>%
+  filter(gender == "FEMALE")
+```
+
+```{r}
+# Transponer los datos de expresión del gen FRY para que las columnas sean las muestras
+gen_FRY_t <- as.data.frame(t(gen_FRY[-1]))
+colnames(gen_FRY_t) <- gen_FRY$Ensembl_ID
+
+# Añadir la columna de identificador de paciente a los datos de expresión
+gen_FRY_t$sample_id <- rownames(gen_FRY_t)
+
+# Ajustar los identificadores en la tabla de expresión génica para que coincidan con los datos clínicos
+gen_FRY_t$sample_id <- gsub("\\.", "-", substr(gen_FRY_t$sample_id, 1, 12))
+
+# Unir los datos de expresión con los datos clínicos
+merged_data <- clinical_breast_cancer %>%
+  inner_join(gen_FRY_t, by = c("bcr_patient_barcode" = "sample_id"))
+
+```
+
+
+```{}
+str(merged_data)
+
+```
+
+
+
+```{r}
+# Modelo de Cox para OS
+cox_os <- coxph(Surv(OS.time, OS) ~ `ENSG00000073910.18` + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = merged_data)
+
+# Modelo de Cox para PFI
+cox_pfi <- coxph(Surv(PFI.time, PFI) ~ `ENSG00000073910.18` + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = merged_data)
+
+# Resumen de los modelos
+summary(cox_os)
+summary(cox_pfi)
+
+```
+
+
+```{r}
+# Categorizar la expresión del gen FRY en alta y baja
+merged_data <- merged_data %>%
+  mutate(FRY_expression_group = ifelse(`ENSG00000073910.18` > median(`ENSG00000073910.18`), "High", "Low"))
+```
+
+```{r}
+# Graficar la supervivencia global (OS)
+fit_os <- survfit(Surv(OS.time, OS) ~ FRY_expression_group, data = merged_data)
+ggsurvplot(fit_os, data = merged_data, pval = TRUE, risk.table = TRUE, 
+           title = "(OS) según la expresión del gen FRY",
+           xlab = "Tiempo (días)", ylab = "Supervivencia")
+```
+
+```{r}
+# Graficar la progresión libre de enfermedad (PFI)
+fit_pfi <- survfit(Surv(PFI.time, PFI) ~ FRY_expression_group, data = merged_data)
+ggsurvplot(fit_pfi, data = merged_data, pval = TRUE, risk.table = TRUE, 
+           title = "(PFI) según la expresión del gen FRY",
+           xlab = "Tiempo (días)", ylab = "Progresión Libre de Enfermedad")
+
+```
+
+```{r}
+# Estratificar la expresión del gen FRY en tertiles
+merged_data <- merged_data %>%
+  mutate(FRY_expression_tertiles = ntile(`ENSG00000073910.18`, 3),
+         FRY_expression_group = case_when(
+           FRY_expression_tertiles == 1 ~ "Low",
+           FRY_expression_tertiles == 2 ~ "Medium",
+           FRY_expression_tertiles == 3 ~ "High"
+         ))
+
+# Verificar la distribución de los grupos
+table(merged_data$FRY_expression_group)
+
+```
+
+
+```{r}
+# Modelo de Cox para OS con estratificación por tertiles
+cox_os_tertiles <- coxph(Surv(OS.time, OS) ~ FRY_expression_group + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = merged_data)
+
+# Modelo de Cox para PFI con estratificación por tertiles
+cox_pfi_tertiles <- coxph(Surv(PFI.time, PFI) ~ FRY_expression_group + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = merged_data)
+
+# Resumen de los modelos
+summary(cox_os_tertiles)
+summary(cox_pfi_tertiles)
+
+```
+
+
+```{r}
+# Test de log-rank para OS
+surv_diff_os <- survdiff(Surv(OS.time, OS) ~ FRY_expression_group, data = merged_data)
+surv_diff_os
+```
+
+```{r}
+# Test de log-rank para PFI
+surv_diff_pfi <- survdiff(Surv(PFI.time, PFI) ~ FRY_expression_group, data = merged_data)
+surv_diff_pfi
+```
+
+
+
+```{r}
+# Graficar la supervivencia global (OS) según tertiles
+fit_os_tertiles <- survfit(Surv(OS.time, OS) ~ FRY_expression_group, data = merged_data)
+ggsurvplot(fit_os_tertiles, data = merged_data, pval = TRUE, risk.table = TRUE, 
+           title = "Supervivencia Global (OS) según Tertiles de Expresión del Gen FRY",
+           xlab = "Tiempo (días)", ylab = "Supervivencia")
+```
+
+```{r}
+# Graficar la progresión libre de enfermedad (PFI) según tertiles
+fit_pfi_tertiles <- survfit(Surv(PFI.time, PFI) ~ FRY_expression_group, data = merged_data)
+ggsurvplot(fit_pfi_tertiles, data = merged_data, pval = TRUE, risk.table = TRUE, 
+           title = "Progresión Libre de Enfermedad (PFI) según Tertiles de Expresión del Gen FRY",
+           xlab = "Tiempo (días)", ylab = "Progresión Libre de Enfermedad")
+
+```
+
+
+########################################################################################################################
+
+# TIPOS CANCER DE MAMA
+
+```{r}
+pam50_perou <- read_delim("pam50_perou.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+```
+
+```{r}
+merged_tipos <- merged_data %>%
+  inner_join(pam50_perou, by = c("bcr_patient_barcode" = "Sample_ID"))
+```
+
+
+```{r}
+# Crear una función para el análisis y gráficas
+analizar_subtipo_OS <- function(data, subtipo) {
+  median_expression <- median(data$ENSG00000073910.18, na.rm = TRUE)
+  
+  data <- data %>%
+    mutate(FRY_expression_group = ifelse(`ENSG00000073910.18` > median_expression, "High", "Low"))
+  
+  cox_os <- coxph(Surv(OS.time, OS) ~ `ENSG00000073910.18` + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = data)
+
+  
+  fit_os <- survfit(Surv(OS.time, OS) ~ FRY_expression_group, data = data)
+  ggsurvplot(fit_os, data = data, pval = TRUE, risk.table = TRUE, 
+             title = paste("(OS) gen FRY", subtipo),
+             xlab = "Tiempo (días)", ylab = "Supervivencia")
+
+}
+
+```
+
+```{r}
+# Crear una función para el análisis y gráficas
+analizar_subtipo_PFI <- function(data, subtipo) {
+  median_expression <- median(data$ENSG00000073910.18, na.rm = TRUE)
+  
+  data <- data %>%
+    mutate(FRY_expression_group = ifelse(`ENSG00000073910.18` > median_expression, "High", "Low"))
+  
+  cox_pfi <- coxph(Surv(PFI.time, PFI) ~ `ENSG00000073910.18` + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = data)
+  
+  
+  fit_pfi <- survfit(Surv(PFI.time, PFI) ~ FRY_expression_group, data = data)
+  ggsurvplot(fit_pfi, data = data, pval = TRUE, risk.table = TRUE, 
+             title = paste("(PFI) gen FRY", subtipo),
+             xlab = "Tiempo (días)", ylab = "Progresión Libre de Enfermedad")
+
+}
+```
+
+
+```{r}
+# Filtrar los datos para cada subtipo de cáncer de mama
+tabla_HER <- merged_tipos %>%
+  filter(pam50 == "HER2E")
+
+tabla_lumA <- merged_tipos %>%
+  filter(pam50 == "LumA")
+
+tabla_lumB <- merged_tipos %>%
+  filter(pam50 == "LumB")
+
+tabla_normal_like <- merged_tipos %>%
+  filter(pam50 == "normal-like")
+
+tabla_basal <- merged_tipos %>%
+  filter(pam50 == "Basal")
+```
+
+
+```{r}
+# Aplicar la función para cada subtipo
+analizar_subtipo_OS(tabla_HER, "HER2E")
+analizar_subtipo_OS(tabla_lumA, "LuminalA")
+analizar_subtipo_OS(tabla_lumB, "LuminalB")
+analizar_subtipo_OS(tabla_normal_like, "normal-like")
+analizar_subtipo_OS(tabla_basal, "Basal")
+
+```
+
+```{r}
+# Aplicar la función para cada subtipo
+analizar_subtipo_PFI(tabla_HER, "HER2E")
+analizar_subtipo_PFI(tabla_lumA, "LuminalA")
+analizar_subtipo_PFI(tabla_lumB, "LuminalB")
+analizar_subtipo_PFI(tabla_normal_like, "normal-like")
+analizar_subtipo_PFI(tabla_basal, "Basal")
+
+```
+
+```{r}
+analizar_subtipo_tertiles_OS <- function(data, subtipo) {
+  data <- data %>%
+    mutate(FRY_expression_tertiles = ntile(`ENSG00000073910.18`, 3),
+           FRY_expression_group = case_when(
+             FRY_expression_tertiles == 1 ~ "Low",
+             FRY_expression_tertiles == 2 ~ "Medium",
+             FRY_expression_tertiles == 3 ~ "High"
+           ))
+  
+  print(table(data$FRY_expression_group))
+  
+  cox_os <- coxph(Surv(OS.time, OS) ~ FRY_expression_group + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = data)
+  
+  print(summary(cox_os))
+  
+  surv_diff_os <- survdiff(Surv(OS.time, OS) ~ FRY_expression_group, data = data)
+  
+  print(surv_diff_os)
+  
+  fit_os <- survfit(Surv(OS.time, OS) ~ FRY_expression_group, data = data)
+  ggsurvplot(fit_os, data = data, pval = TRUE, risk.table = TRUE, 
+             title = paste("Supervivencia GlobaL del Gen FRY -", subtipo),
+             xlab = "Tiempo (días)", ylab = "Supervivencia")
+  
+}
+```
+
+
+```{r}
+analizar_subtipo_tertiles_OS(tabla_HER, "HER2E")
+analizar_subtipo_tertiles_OS(tabla_lumA, "LuminalA")
+analizar_subtipo_tertiles_OS(tabla_lumB, "LuminalB")
+analizar_subtipo_tertiles_OS(tabla_normal_like, "normal-like")
+analizar_subtipo_tertiles_OS(tabla_basal, "Basal")
+
+```
+
+```{r}
+# Función para el análisis y graficación
+analizar_subtipo_tertiles_PFI <- function(data, subtipo) {
+  # Estratificar la expresión del gen FRY en tertiles
+  data <- data %>%
+    mutate(FRY_expression_tertiles = ntile(`ENSG00000073910.18`, 3),
+           FRY_expression_group = case_when(
+             FRY_expression_tertiles == 1 ~ "Low",
+             FRY_expression_tertiles == 2 ~ "Medium",
+             FRY_expression_tertiles == 3 ~ "High"
+           ))
+  
+
+  cox_pfi <- coxph(Surv(PFI.time, PFI) ~ FRY_expression_group + age_at_initial_pathologic_diagnosis + ajcc_pathologic_tumor_stage, data = data) 
+  
+
+  print(summary(cox_pfi))
+  
+  # Test de log-rank
+  surv_diff_pfi <- survdiff(Surv(PFI.time, PFI) ~ FRY_expression_group, data = data)
+ 
+  print(surv_diff_pfi)
+  
+  
+  # Graficar la progresión libre de enfermedad (PFI) según tertiles
+  fit_pfi <- survfit(Surv(PFI.time, PFI) ~ FRY_expression_group, data = data)
+  ggsurvplot(fit_pfi, data = data, pval = TRUE, risk.table = TRUE, 
+             title = paste("Progresión Libre de Enfermedad (PFI) Gen FRY -", subtipo),
+             xlab = "Tiempo (días)", ylab = "Progresión Libre de Enfermedad")
+}
+```
+
+```{r}
+# Aplicar la función para cada subtipo
+analizar_subtipo_tertiles_PFI(tabla_HER, "HER2E")
+analizar_subtipo_tertiles_PFI(tabla_lumA, "LuminalA")
+analizar_subtipo_tertiles_PFI(tabla_lumB, "LuminalB")
+analizar_subtipo_tertiles_PFI(tabla_normal_like, "normal-like")
+analizar_subtipo_tertiles_PFI(tabla_basal, "Basal")
+
+```
