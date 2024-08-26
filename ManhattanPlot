@@ -1,0 +1,75 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(plotly)
+```
+
+```{r}
+brca1_log <- read_tsv("BRCA1_FILT_RSID_LOG10.txt")
+brca2_log <- read_tsv("BRCA2_FILT_RSID_LOG10.txt")
+```
+
+
+
+```{r}
+min_region <- 32300000
+max_region <- 33200000
+
+brca1_filtered <- filter(brca1_log, position >= min_region & position <= max_region)
+brca2_filtered <- filter(brca2_log, position >= min_region & position <= max_region)
+
+brca1_plot <- plot_ly(data = brca1_filtered, x = ~position, y = ~`bcac_icogs1_risk_P1df`, mode = 'markers', type = 'scatter', name = 'BRCA1_risk') %>%
+  add_trace(y = ~`bcac_icogs1_erneg_P1df`, name = 'BRCA1_erneg') %>%
+  add_trace(y = ~`bcac_icogs1_erpos_P1df`, name = 'BRCA1_erpos') %>%
+  layout(title = 'Manhattan Plot - BRCA1',
+         xaxis = list(title = 'Position'),
+         yaxis = list(title = '-log10(P value)'))
+
+brca2_plot <- plot_ly(data = brca2_filtered, x = ~position, y = ~`bcac_icogs1_risk_P1df`, mode = 'markers', type = 'scatter', name = 'BRCA2_risk') %>%
+  add_trace(y = ~`bcac_icogs1_erneg_P1df`, name = 'BRCA2_erneg') %>%
+  add_trace(y = ~`bcac_icogs1_erpos_P1df`, name = 'BRCA2_erpos') %>%
+  layout(title = 'Manhattan Plot - BRCA2',
+         xaxis = list(title = 'Position'),
+         yaxis = list(title = '-log10(P value)'))
+
+subplot(brca1_plot, brca2_plot, nrows = 2)
+```
+
+
+```{r}
+
+# Filtrar datos para la región de interés
+min_region <- 32300000
+max_region <- 33200000
+
+brca1_filtered <- brca1_log %>%
+  filter(position >= min_region & position <= max_region)
+
+brca2_filtered <- brca2_log %>%
+  filter(position >= min_region & position <= max_region)
+
+# Crear los gráficos de Manhattan
+brca1_plot <- plot_ly(data = brca1_filtered, x = ~position, y = ~bcac_icogs1_risk_P1df, mode = 'markers', type = 'scatter', name = 'BRCA1_risk') %>%
+  add_trace(y = ~bcac_icogs1_erneg_P1df, name = 'BRCA1_erneg') %>%
+  add_trace(y = ~bcac_icogs1_erpos_P1df, name = 'BRCA1_erpos') %>%
+  layout(title = 'Manhattan Plot - BRCA1',
+         xaxis = list(title = 'Position'),
+         yaxis = list(title = '-log10(P value)', autorange = 'reversed'))
+
+brca2_plot <- plot_ly(data = brca2_filtered, x = ~position, y = ~bcac_icogs1_risk_P1df, mode = 'markers', type = 'scatter', name = 'BRCA2_risk') %>%
+  add_trace(y = ~bcac_icogs1_erneg_P1df, name = 'BRCA2_erneg') %>%
+  add_trace(y = ~bcac_icogs1_erpos_P1df, name = 'BRCA2_erpos') %>%
+  layout(title = 'Manhattan Plot - BRCA2',
+         xaxis = list(title = 'Position'),
+         yaxis = list(title = '-log10(P value)', autorange = 'reversed'))
+
+# Mostrar los gráficos en un subplot
+subplot(brca1_plot, brca2_plot, nrows = 2)
+
+```
+
